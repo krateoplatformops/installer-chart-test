@@ -43,31 +43,36 @@ jobs:
             echo "REPO_APP_NAME=$REPO_CHART_NAME" >> $GITHUB_ENV
           fi
 
-      - name: Extract App Version
+      - name: Extract App Version from Remote Repo
         run: |
           set -euo pipefail
           
-          echo "=== Searching latest tags for module '${{ env.MODULE }}' ==="
+          echo "=== Target Remote Repo: ${{ env.REPO_APP_NAME }} ==="
+
+          # Construct the remote URL using the App Token for authentication
+          # We use the computed REPO_APP_NAME (e.g., owner/installer)
+          REMOTE_URL="https://x-access-token:${{ steps.authenticate.outputs.token }}@github.com/${{ env.REPO_APP_NAME }}.git"
           
-          # Find the latest tag matching the module pattern
-          APP_VERSION="$(
-            git tag -l '${{ env.MODULE }}/*' --sort=-version:refname \
-            | head -n1 || true
-          )"
-          echo "Raw APP_VERSION tag: '${APP_VERSION}'"
-
-          echo
-          echo "=== Processing APP_VERSION ==="
+          echo "=== querying remote tags for pattern: ${{ env.MODULE }}/* ==="
           
-          # Apply fallback if variable is empty
-          APP_VERSION="${APP_VERSION:-${{ env.MODULE }}/0.0.1}"
-          echo "After fallback → '${APP_VERSION}'"
+          # Use git ls-remote to list tags from the remote repo without cloning it.
+          # --sort='-v:refname' ensures we get the highest version first.
+          # We filter specifically for tags matching "refs/tags/installer/*"
+          LATEST_TAG_REF=$(git ls-remote --tags --refs --sort='-v:refname' "$REMOTE_URL" "refs/tags/${{ env.MODULE }}/*" | head -n 1)
 
-          # Strip prefix: remove everything before the last slash
-          APP_VERSION="${APP_VERSION##*/}"
-          echo "After strip (Final) → '${APP_VERSION}'"
+          if [ -z "$LATEST_TAG_REF" ]; then
+            echo "No tags found matching pattern in remote repo!"
+            echo "Using fallback..."
+            APP_VERSION="0.0.1"
+          else
+            # The output format is: "hash    refs/tags/installer/0.6.3"
+            # We strip everything up to the last slash to get "0.6.3"
+            APP_VERSION=${LATEST_TAG_REF##*/}
+            echo "Found tag: $APP_VERSION"
+          fi
 
-          # Export to GITHUB_ENV
+          echo "=== Final APP_VERSION ==="
+          echo "APP_VERSION=$APP_VERSION"
           echo "APP_VERSION=$APP_VERSION" >> "$GITHUB_ENV"
 
       - name: Print Version
