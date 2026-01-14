@@ -1,4 +1,4 @@
-name: release-tag
+name: release-tag-installer
 
 on:
   push:
@@ -12,7 +12,7 @@ jobs:
       - name: Extract and Store Trimmed Repository Name
         run: |
           REPO_CHART_NAME="${{ github.repository }}"
-          REPO_APP_NAME=$(echo "$REPO_CHART_NAME" | sed 's/-chart$//')  # Remove "-chart" suffix if present
+          REPO_APP_NAME=$(echo "$REPO_CHART_NAME" | sed 's/-chart-test$//')  # Remove "-chart-test" suffix if present
           
           # Check if the trimmed repo exists
           HTTP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
@@ -56,22 +56,32 @@ jobs:
       - name: Print Version
         run: |
           echo APP_VERSION:${{steps.app_version.outputs.tag}}
-          echo CHART_VERSION:${{steps.chart_version.outputs.tag}}
+          echo CHART_VERSION:${{ github.ref_name }}
 
-      - name: Replace Version in Chart.yaml
-        run: sed -i 's/CHART_VERSION/${{ steps.chart_version.outputs.tag }}/g' ./chart/Chart.yaml
+      - name: Replace CHART_VERSION in chart/Chart.yaml
+        run: sed -i 's/CHART_VERSION/${{ github.ref_name }}/g' ./chart/Chart.yaml
 
       - name: Print latest App Version
         run: echo ${{ steps.app_version.outputs.tag }}
 
-      - name: Replace App Version in Chart.yaml
+      - name: Replace APP_VERSION in Chart.yaml
         run: sed -i 's/APP_VERSION/${{ steps.app_version.outputs.tag }}/g' ./chart/Chart.yaml
+
+      - name: Replace CHART_VERSION in ./${{ env.MODULE }}-pre-upgrade-chart/Chart.yaml
+        run: sed -i 's/CHART_VERSION/${{ github.ref_name }}/g' ./${{ env.MODULE }}-pre-upgrade-chart/Chart.yaml
+
+      # Stage only the chart you want to publish
+      - name: Prepare charts_dir
+        run: |
+          mkdir -p _${{ env.MODULE }}-chart
+          cp -R ${{ env.MODULE }}-chart _${{ env.MODULE }}-chart/
+          cp -R ${{ env.MODULE }}-pre-upgrade-chart _${{ env.MODULE }}-chart/
 
       - name: Publish Helm chart
         uses: stefanprodan/helm-gh-pages@master
         with:
           token: ${{ steps.authenticate.outputs.token }}
-          charts_dir: ./
+          charts_dir: _chart
           charts_url: https://charts.krateo.io
           owner: krateoplatformops
           repository: helm-charts
