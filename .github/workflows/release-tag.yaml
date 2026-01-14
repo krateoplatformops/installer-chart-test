@@ -38,17 +38,37 @@ jobs:
           app_id: ${{ secrets.APP_ID }}
           private_key: ${{ secrets.PRIVATE_KEY }}
 
-      - name: Extract latest App Version
-        uses: tdemin/find-latest-tag@v1
-        id: app_version
-        with:
-          repo: https://${{ steps.authenticate.outputs.token }}@github.com/${{ env.REPO_APP_NAME }}.git
+      - name: Extract App Version
+        run: |
+          set -euo pipefail
+          
+          # Fetch tags to ensure we have the complete history
+          git fetch --tags --force
 
-      - name: Extract latest Chart Version
-        uses: tdemin/find-latest-tag@v1
-        id: chart_version
-        with:
-          repo: https://${{ steps.authenticate.outputs.token }}@github.com/${{ github.repository }}.git
+          echo "=== Searching latest tags for module '${{ env.MODULE }}' ==="
+          
+          # Find the latest tag matching the module pattern (e.g. installer/*)
+          # We use '|| true' to prevent failure if no tags are found
+          APP_VERSION="$(
+            git tag -l '${{ env.MODULE }}/*' --sort=-version:refname \
+            | head -n1 || true
+          )"
+          echo "Raw APP_VERSION tag: '${APP_VERSION}'"
+
+          echo
+          echo "=== Processing APP_VERSION ==="
+          
+          # Apply fallback if variable is empty
+          APP_VERSION="${APP_VERSION:-${{ env.MODULE }}/0.0.1}"
+          echo "After fallback → '${APP_VERSION}'"
+
+          # Strip prefix: remove everything before the last slash
+          # Example: 'installer/0.6.3' becomes '0.6.3'
+          APP_VERSION="${APP_VERSION##*/}"
+          echo "After strip (Final) → '${APP_VERSION}'"
+
+          # Export to GITHUB_ENV
+          echo "APP_VERSION=$APP_VERSION" >> "$GITHUB_ENV"
 
       - name: Checkout
         uses: actions/checkout@v3
@@ -65,7 +85,7 @@ jobs:
         run: echo ${{ steps.app_version.outputs.tag }}
 
       - name: Replace APP_VERSION in Chart.yaml
-        run: sed -i 's/APP_VERSION/${{ steps.app_version.outputs.tag }}/g' ./chart/Chart.yaml
+        run: sed -i 's/APP_VERSION/${{ env.APP_VERSION }}/g' ./chart/Chart.yaml
 
       - name: Replace CHART_VERSION in ./${{ env.MODULE }}-pre-upgrade-chart/Chart.yaml
         run: sed -i 's/CHART_VERSION/${{ github.ref_name }}/g' ./${{ env.MODULE }}-pre-upgrade-chart/Chart.yaml
